@@ -65,6 +65,18 @@ def generate_visualizations(data, numeric_cols):
             plt.savefig(f"{col}_distribution.png")
             print(f"Histogram for {col} saved as {col}_distribution.png")
 
+def perform_clustering(data, numeric_cols):
+    try:
+        if len(numeric_cols) > 1:
+            kmeans = KMeans(n_clusters=3, random_state=42)
+            clusters = kmeans.fit_predict(data[numeric_cols].dropna())
+            data['Cluster'] = pd.Series(clusters, index=data[numeric_cols].dropna().index)
+            print("Clustering performed and added as 'Cluster' column.")
+        return data
+    except Exception as e:
+        print(f"Error performing clustering: {e}")
+        return data
+
 def query_llm(data):
     api_url = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
     api_key = os.getenv("AIPROXY_TOKEN")
@@ -113,6 +125,8 @@ def main():
 
     if numeric_cols:
         generate_visualizations(data, numeric_cols)
+
+    data = perform_clustering(data, numeric_cols)
 
     insights = query_llm(data)
     save_readme(insights)
