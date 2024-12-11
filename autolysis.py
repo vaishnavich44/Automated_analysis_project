@@ -16,6 +16,8 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import silhouette_score
 import chardet
 import requests
 
@@ -66,16 +68,15 @@ def generate_visualizations(data, numeric_cols):
             print(f"Histogram for {col} saved as {col}_distribution.png")
 
 def perform_clustering(data, numeric_cols):
-    try:
-        if len(numeric_cols) > 1:
+    if len(numeric_cols) > 1:
+        try:
             kmeans = KMeans(n_clusters=3, random_state=42)
             clusters = kmeans.fit_predict(data[numeric_cols].dropna())
-            data['Cluster'] = pd.Series(clusters, index=data[numeric_cols].dropna().index)
-            print("Clustering performed and added as 'Cluster' column.")
-        return data
-    except Exception as e:
-        print(f"Error performing clustering: {e}")
-        return data
+            data['Cluster'] = clusters
+            silhouette_avg = silhouette_score(data[numeric_cols].dropna(), clusters)
+            print(f"Clustering performed successfully. Silhouette Score: {silhouette_avg}")
+        except Exception as e:
+            print(f"Error during clustering: {e}")
 
 def query_llm(data):
     api_url = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
@@ -125,8 +126,7 @@ def main():
 
     if numeric_cols:
         generate_visualizations(data, numeric_cols)
-
-    data = perform_clustering(data, numeric_cols)
+        perform_clustering(data, numeric_cols)
 
     insights = query_llm(data)
     save_readme(insights)
