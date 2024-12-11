@@ -46,27 +46,24 @@ def analyze_data(data):
     return numeric_cols, categorical_cols, text_cols
 
 def generate_visualizations(data, numeric_cols):
-    correlation = data[numeric_cols].corr()
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(correlation, annot=True, fmt=".2f", cmap="coolwarm")
-    plt.title("Correlation Heatmap")
-    plt.savefig("correlation_heatmap.png")
-    print("Correlation heatmap saved as correlation_heatmap.png")
+    if numeric_cols:
+        # Correlation heatmap
+        correlation = data[numeric_cols].corr()
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(correlation, annot=True, fmt=".2f", cmap="coolwarm")
+        plt.title("Correlation Heatmap")
+        plt.savefig("correlation_heatmap.png")
+        print("Correlation heatmap saved as correlation_heatmap.png")
 
-def perform_clustering(data, numeric_cols, n_clusters=3):
-    try:
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        filtered_data = data[numeric_cols].dropna()  # Drop rows with NaNs for clustering
-        clusters = kmeans.fit_predict(filtered_data)
-
-        # Align cluster results back with original data length
-        cluster_column = pd.Series(index=filtered_data.index, data=clusters)
-        data['Cluster'] = cluster_column.reindex(data.index, fill_value=-1).astype(int)
-        print(f"Clustering completed. Number of clusters: {n_clusters}")
-        return data
-    except Exception as e:
-        print(f"Error performing clustering: {e}")
-        sys.exit(1)
+        # Histograms for numeric columns
+        for col in numeric_cols:
+            plt.figure()
+            sns.histplot(data[col], kde=True, bins=30)
+            plt.title(f"Distribution of {col}")
+            plt.xlabel(col)
+            plt.ylabel("Frequency")
+            plt.savefig(f"{col}_distribution.png")
+            print(f"Histogram for {col} saved as {col}_distribution.png")
 
 def query_llm(data):
     api_url = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
@@ -76,9 +73,11 @@ def query_llm(data):
         sys.exit(1)
 
     summary = data.describe().to_dict()
+    missing_values = data.isnull().sum().to_dict()
     sample_rows = data.head(5).to_dict(orient='records')
     prompt = (
         f"### Dataset Summary:\n{summary}\n"
+        f"### Missing Values:\n{missing_values}\n"
         f"### Sample Rows:\n{sample_rows}\n"
         "Generate a detailed README.md with the following sections:\n"
         "1. Dataset Overview\n"
@@ -98,7 +97,7 @@ def query_llm(data):
         print(f"Error querying the LLM: {e}")
         sys.exit(1)
 
-def save_readme(data, insights):
+def save_readme(insights):
     with open("README.md", "w") as f:
         f.write(insights)
     print("README saved as README.md")
@@ -115,10 +114,8 @@ def main():
     if numeric_cols:
         generate_visualizations(data, numeric_cols)
 
-    data = perform_clustering(data, numeric_cols)
-
     insights = query_llm(data)
-    save_readme(data, insights)
+    save_readme(insights)
 
 if __name__ == "__main__":
     main()
