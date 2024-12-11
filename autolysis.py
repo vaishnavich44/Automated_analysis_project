@@ -16,8 +16,6 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
 import chardet
 import requests
 
@@ -47,30 +45,7 @@ def analyze_data(data):
 
     return numeric_cols, categorical_cols, text_cols
 
-def perform_clustering(data, numeric_cols):
-    kmeans = KMeans(n_clusters=3, random_state=42)
-    clusters = kmeans.fit_predict(data[numeric_cols].dropna())
-    data['Cluster'] = clusters
-    print("Clustering analysis completed.")
-    return data
-
-def perform_regression(data, target_col):
-    numeric_data = data.select_dtypes(include=['float64', 'int64']).dropna()
-    if target_col not in numeric_data:
-        print(f"Target column '{target_col}' is not numeric or missing.")
-        return None
-
-    X = numeric_data.drop(columns=[target_col])
-    y = numeric_data[target_col]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    model = LinearRegression()
-    model.fit(X_train, y_train)
-    score = model.score(X_test, y_test)
-    print(f"Regression analysis R² score: {score:.2f}")
-    return score
-
 def generate_visualizations(data, numeric_cols):
-    # Correlation Heatmap
     correlation = data[numeric_cols].corr()
     plt.figure(figsize=(10, 8))
     sns.heatmap(correlation, annot=True, fmt=".2f", cmap="coolwarm")
@@ -78,13 +53,20 @@ def generate_visualizations(data, numeric_cols):
     plt.savefig("correlation_heatmap.png")
     print("Correlation heatmap saved as correlation_heatmap.png")
 
-    # Distribution of Numeric Columns
-    for col in numeric_cols:
-        plt.figure()
-        sns.histplot(data[col].dropna(), kde=True, bins=30)
-        plt.title(f"Distribution of {col}")
-        plt.savefig(f"{col}_distribution.png")
-        print(f"Distribution plot saved as {col}_distribution.png")
+def perform_clustering(data, numeric_cols, n_clusters=3):
+    try:
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        filtered_data = data[numeric_cols].dropna()  # Drop rows with NaNs for clustering
+        clusters = kmeans.fit_predict(filtered_data)
+
+        # Align cluster results back with original data length
+        cluster_column = pd.Series(index=filtered_data.index, data=clusters)
+        data['Cluster'] = cluster_column.reindex(data.index, fill_value=-1).astype(int)
+        print(f"Clustering completed. Number of clusters: {n_clusters}")
+        return data
+    except Exception as e:
+        print(f"Error performing clustering: {e}")
+        sys.exit(1)
 
 def query_llm(data):
     api_url = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
@@ -132,10 +114,8 @@ def main():
 
     if numeric_cols:
         generate_visualizations(data, numeric_cols)
-        data = perform_clustering(data, numeric_cols)
 
-    if 'target_col' in data.columns:
-        perform_regression(data, 'target_col')
+    data = perform_clustering(data, numeric_cols)
 
     insights = query_llm(data)
     save_readme(data, insights)
