@@ -17,16 +17,30 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import silhouette_score
+from sklearn.ensemble import RandomForestRegressor
 import chardet
 import requests
 
 def detect_encoding(file_path):
+    """
+    Detect file encoding for reading datasets.
+    Args:
+        file_path (str): Path to the dataset file.
+    Returns:
+        str: Detected file encoding.
+    """
     with open(file_path, 'rb') as f:
         result = chardet.detect(f.read(10000))
     return result['encoding']
 
 def load_dataset(file_path):
+    """
+    Load the dataset using the detected encoding.
+    Args:
+        file_path (str): Path to the dataset file.
+    Returns:
+        pd.DataFrame: Loaded dataset.
+    """
     try:
         encoding = detect_encoding(file_path)
         data = pd.read_csv(file_path, encoding=encoding)
@@ -37,6 +51,13 @@ def load_dataset(file_path):
         sys.exit(1)
 
 def analyze_data(data):
+    """
+    Analyze dataset to identify numeric, categorical, and text columns.
+    Args:
+        data (pd.DataFrame): Dataset to analyze.
+    Returns:
+        tuple: Lists of numeric, categorical, and text columns.
+    """
     numeric_cols = data.select_dtypes(include=['float64', 'int64']).columns.tolist()
     categorical_cols = data.select_dtypes(include=['object']).columns.tolist()
     text_cols = [col for col in categorical_cols if data[col].str.len().mean() > 50]
@@ -48,6 +69,12 @@ def analyze_data(data):
     return numeric_cols, categorical_cols, text_cols
 
 def generate_visualizations(data, numeric_cols):
+    """
+    Generate visualizations for numeric columns in the dataset.
+    Args:
+        data (pd.DataFrame): Dataset to visualize.
+        numeric_cols (list): List of numeric columns.
+    """
     if numeric_cols:
         # Correlation heatmap
         correlation = data[numeric_cols].corr()
@@ -57,7 +84,7 @@ def generate_visualizations(data, numeric_cols):
         plt.savefig("correlation_heatmap.png")
         print("Correlation heatmap saved as correlation_heatmap.png")
 
-        # Histograms for numeric columns
+        # Additional visualizations
         for col in numeric_cols:
             plt.figure()
             sns.histplot(data[col], kde=True, bins=30)
@@ -67,18 +94,46 @@ def generate_visualizations(data, numeric_cols):
             plt.savefig(f"{col}_distribution.png")
             print(f"Histogram for {col} saved as {col}_distribution.png")
 
-def perform_clustering(data, numeric_cols):
-    if len(numeric_cols) > 1:
+            plt.figure()
+            sns.boxplot(y=data[col])
+            plt.title(f"Boxplot of {col}")
+            plt.ylabel(col)
+            plt.savefig(f"{col}_boxplot.png")
+            print(f"Boxplot for {col} saved as {col}_boxplot.png")
+
+def perform_advanced_analysis(data, numeric_cols):
+    """
+    Perform advanced analyses like clustering and regression.
+    Args:
+        data (pd.DataFrame): Dataset to analyze.
+        numeric_cols (list): List of numeric columns.
+    """
+    if numeric_cols:
         try:
+            # Clustering
             kmeans = KMeans(n_clusters=3, random_state=42)
             clusters = kmeans.fit_predict(data[numeric_cols].dropna())
-            data['Cluster'] = clusters
-            silhouette_avg = silhouette_score(data[numeric_cols].dropna(), clusters)
-            print(f"Clustering performed successfully. Silhouette Score: {silhouette_avg}")
+            data['Cluster'] = pd.Series(clusters, index=data.dropna().index)
+            print("Clustering completed and added to dataset.")
+
+            # Regression example
+            if len(numeric_cols) > 1:
+                X = data[numeric_cols[:-1]].dropna()
+                y = data[numeric_cols[-1]].dropna()
+                model = LinearRegression()
+                model.fit(X, y)
+                print(f"Regression model coefficients: {model.coef_}")
         except Exception as e:
-            print(f"Error during clustering: {e}")
+            print(f"Advanced analysis error: {e}")
 
 def query_llm(data):
+    """
+    Query the LLM for insights and README.md generation.
+    Args:
+        data (pd.DataFrame): Dataset to analyze.
+    Returns:
+        str: Generated insights from the LLM.
+    """
     api_url = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
     api_key = os.getenv("AIPROXY_TOKEN")
     if not api_key:
@@ -111,11 +166,19 @@ def query_llm(data):
         sys.exit(1)
 
 def save_readme(insights):
+    """
+    Save insights to README.md.
+    Args:
+        insights (str): Content to save in README.md.
+    """
     with open("README.md", "w") as f:
         f.write(insights)
     print("README saved as README.md")
 
 def main():
+    """
+    Main function to orchestrate the analysis, visualization, and LLM querying.
+    """
     if len(sys.argv) != 2:
         print("Usage: uv run autolysis.py <dataset.csv>")
         sys.exit(1)
@@ -126,7 +189,7 @@ def main():
 
     if numeric_cols:
         generate_visualizations(data, numeric_cols)
-        perform_clustering(data, numeric_cols)
+        perform_advanced_analysis(data, numeric_cols)
 
     insights = query_llm(data)
     save_readme(insights)
