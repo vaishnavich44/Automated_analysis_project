@@ -86,6 +86,10 @@ def detect_outliers(data, numeric_cols):
         dict: A summary of outliers per numeric column.
     """
     outlier_summary = {}
+    if not numeric_cols:
+        print("No numeric columns available for outlier detection.")
+        return outlier_summary
+    
     for col in numeric_cols:
         Q1 = data[col].quantile(0.25)
         Q3 = data[col].quantile(0.75)
@@ -98,6 +102,10 @@ def detect_outliers(data, numeric_cols):
     return outlier_summary
 
 def perform_clustering(data, numeric_cols):
+    if not numeric_cols:
+        print("Skipping clustering: No numeric columns available.")
+        return
+
     try:
         kmeans = KMeans(n_clusters=3, random_state=42)
         clusters = kmeans.fit_predict(data[numeric_cols].dropna())
@@ -107,16 +115,23 @@ def perform_clustering(data, numeric_cols):
         print(f"Clustering failed: {e}")
 
 def apply_pca(data, numeric_cols):
-    pca = PCA(n_components=2)
-    # Dropping rows with missing values
-    data_numeric = data[numeric_cols].dropna()
-    pca_result = pca.fit_transform(data_numeric)
-    
-    # Create a DataFrame with PCA results and align it with the original data
-    pca_df = pd.DataFrame(pca_result, columns=['PCA1', 'PCA2'], index=data_numeric.index)
-    data['PCA1'] = pca_df['PCA1']
-    data['PCA2'] = pca_df['PCA2']
-    print("PCA applied. PCA results added to the dataset.")
+    if not numeric_cols:
+        print("Skipping PCA: No numeric columns available.")
+        return
+
+    try:
+        pca = PCA(n_components=2)
+        # Dropping rows with missing values
+        data_numeric = data[numeric_cols].dropna()
+        pca_result = pca.fit_transform(data_numeric)
+        
+        # Create a DataFrame with PCA results and align it with the original data
+        pca_df = pd.DataFrame(pca_result, columns=['PCA1', 'PCA2'], index=data_numeric.index)
+        data['PCA1'] = pca_df['PCA1']
+        data['PCA2'] = pca_df['PCA2']
+        print("PCA applied. PCA results added to the dataset.")
+    except Exception as e:
+        print(f"PCA failed: {e}")
 
 def generate_visualizations(data, numeric_cols, categorical_cols):
     """
@@ -202,11 +217,13 @@ def generate_dynamic_prompt(data, numeric_cols, categorical_cols, outliers, visu
         f"2. Outlier summary: {outliers}\n"
         "3. Missing values analysis: Discuss potential impacts and resolution strategies.\n\n"
         "### Visualizations\n"
-        f"1. ![Correlation Heatmap](correlation_heatmap.png)\n"
-        f"2. ![Distribution of {numeric_cols[0] if numeric_cols else 'N/A'}](distribution_{numeric_cols[0] if numeric_cols else 'N/A'}.png)\n"
-        f"3. ![PCA Clustering Scatterplot](pca_clustering_scatterplot.png)\n"
-        f"4. ![Top 10 Categories in {categorical_cols[0] if categorical_cols else 'N/A'}](top10_{categorical_cols[0] if categorical_cols else 'N/A'}.png)\n\n"
-        "### Practical Applications\n"
+    )
+
+    for viz in visualizations:
+        prompt += f"- ![{viz}]({viz})\n"
+
+    prompt += (
+        "\n### Practical Applications\n"
         "Explain how the findings can inform decisions in relevant domains.\n\n"
         "### Big Picture Conclusions\n"
         "Summarize the key takeaways and actionable insights from the analysis."
