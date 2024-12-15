@@ -16,142 +16,119 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
 import chardet
 import requests
 
 def detect_encoding(file_path):
-    """
-    Detect file encoding for reading datasets.
-    Args:
-        file_path (str): Path to the dataset file.
-    Returns:
-        str: Detected file encoding.
-    """
     with open(file_path, 'rb') as f:
         result = chardet.detect(f.read(10000))
     return result['encoding']
 
 def load_dataset(file_path):
-    """
-    Load the dataset using the detected encoding.
-    Args:
-        file_path (str): Path to the dataset file.
-    Returns:
-        pd.DataFrame: Loaded dataset.
-    """
     try:
         encoding = detect_encoding(file_path)
+        print(f"Detected encoding: {encoding}")
         data = pd.read_csv(file_path, encoding=encoding)
         print(f"Dataset loaded successfully with encoding: {encoding}")
         return data
+    except UnicodeDecodeError:
+        print(f"UnicodeDecodeError: Retrying with 'latin-1' encoding.")
+        try:
+            data = pd.read_csv(file_path, encoding="latin-1")
+            print(f"Dataset loaded successfully with fallback encoding: latin-1")
+            return data
+        except Exception as e:
+            print(f"Error loading dataset with fallback encoding: {e}")
+            sys.exit(1)
     except Exception as e:
         print(f"Error loading dataset: {e}")
         sys.exit(1)
 
 def analyze_data(data):
-    """
-    Analyze dataset to identify numeric, categorical, and text columns.
-    Args:
-        data (pd.DataFrame): Dataset to analyze.
-    Returns:
-        tuple: Lists of numeric, categorical, and text columns.
-    """
     numeric_cols = data.select_dtypes(include=['float64', 'int64']).columns.tolist()
     categorical_cols = data.select_dtypes(include=['object']).columns.tolist()
-    text_cols = [col for col in categorical_cols if data[col].str.len().mean() > 50]
-
     print(f"Numeric columns: {numeric_cols}")
     print(f"Categorical columns: {categorical_cols}")
-    print(f"Text columns: {text_cols}")
+    return numeric_cols, categorical_cols
 
-    return numeric_cols, categorical_cols, text_cols
+def generate_visualizations(data, numeric_cols, categorical_cols):
+    visualizations = []
 
-def generate_visualizations(data, numeric_cols):
-    """
-    Generate visualizations for numeric columns in the dataset.
-    Args:
-        data (pd.DataFrame): Dataset to visualize.
-        numeric_cols (list): List of numeric columns.
-    """
+    # Correlation Heatmap
     if numeric_cols:
-        # Correlation heatmap
         correlation = data[numeric_cols].corr()
         plt.figure(figsize=(10, 8))
-        sns.heatmap(correlation, annot=True, fmt=".2f", cmap="coolwarm")
+        sns.heatmap(correlation, annot=True, cmap="coolwarm", fmt=".2f")
         plt.title("Correlation Heatmap")
         plt.savefig("correlation_heatmap.png")
-        print("Correlation heatmap saved as correlation_heatmap.png")
+        plt.close()
+        visualizations.append("correlation_heatmap.png")
+        print("Saved: correlation_heatmap.png")
 
-        # Additional visualizations
-        for col in numeric_cols:
-            plt.figure()
-            sns.histplot(data[col], kde=True, bins=30)
-            plt.title(f"Distribution of {col}")
-            plt.xlabel(col)
-            plt.ylabel("Frequency")
-            plt.savefig(f"{col}_distribution.png")
-            print(f"Histogram for {col} saved as {col}_distribution.png")
-
-            plt.figure()
-            sns.boxplot(y=data[col])
-            plt.title(f"Boxplot of {col}")
-            plt.ylabel(col)
-            plt.savefig(f"{col}_boxplot.png")
-            print(f"Boxplot for {col} saved as {col}_boxplot.png")
-
-def perform_advanced_analysis(data, numeric_cols):
-    """
-    Perform advanced analyses like clustering and regression.
-    Args:
-        data (pd.DataFrame): Dataset to analyze.
-        numeric_cols (list): List of numeric columns.
-    """
+    # Histogram of First Numeric Column
     if numeric_cols:
-        try:
-            # Clustering
-            kmeans = KMeans(n_clusters=3, random_state=42)
-            clusters = kmeans.fit_predict(data[numeric_cols].dropna())
-            data['Cluster'] = pd.Series(clusters, index=data.dropna().index)
-            print("Clustering completed and added to dataset.")
+        plt.figure(figsize=(8, 6))
+        sns.histplot(data[numeric_cols[0]], bins=30, kde=True)
+        plt.title(f"Distribution of {numeric_cols[0]}")
+        plt.xlabel(numeric_cols[0])
+        plt.ylabel("Frequency")
+        plt.savefig(f"{numeric_cols[0]}_distribution.png")
+        plt.close()
+        visualizations.append(f"{numeric_cols[0]}_distribution.png")
+        print(f"Saved: {numeric_cols[0]}_distribution.png")
 
-            # Regression example
-            if len(numeric_cols) > 1:
-                X = data[numeric_cols[:-1]].dropna()
-                y = data[numeric_cols[-1]].dropna()
-                model = LinearRegression()
-                model.fit(X, y)
-                print(f"Regression model coefficients: {model.coef_}")
-        except Exception as e:
-            print(f"Advanced analysis error: {e}")
+    # Boxplot of Second Numeric Column
+    if len(numeric_cols) > 1:
+        plt.figure(figsize=(8, 6))
+        sns.boxplot(y=data[numeric_cols[1]])
+        plt.title(f"Boxplot of {numeric_cols[1]}")
+        plt.ylabel(numeric_cols[1])
+        plt.savefig(f"{numeric_cols[1]}_boxplot.png")
+        plt.close()
+        visualizations.append(f"{numeric_cols[1]}_boxplot.png")
+        print(f"Saved: {numeric_cols[1]}_boxplot.png")
 
-def query_llm(data):
-    """
-    Query the LLM for insights and README.md generation.
-    Args:
-        data (pd.DataFrame): Dataset to analyze.
-    Returns:
-        str: Generated insights from the LLM.
-    """
+    # Top Categories Bar Chart
+    if categorical_cols:
+        plt.figure(figsize=(10, 6))
+        data[categorical_cols[0]].value_counts().head(10).plot(kind="bar")
+        plt.title(f"Top 10 Categories in {categorical_cols[0]}")
+        plt.xlabel(categorical_cols[0])
+        plt.ylabel("Frequency")
+        plt.savefig(f"{categorical_cols[0]}_top10.png")
+        plt.close()
+        visualizations.append(f"{categorical_cols[0]}_top10.png")
+        print(f"Saved: {categorical_cols[0]}_top10.png")
+
+    return visualizations
+
+def query_llm(data, numeric_cols, categorical_cols, visualizations):
     api_url = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
     api_key = os.getenv("AIPROXY_TOKEN")
     if not api_key:
         print("Error: AIPROXY_TOKEN environment variable not set.")
         sys.exit(1)
 
-    summary = data.describe().to_dict()
+    summary_stats = data.describe(include="all").to_dict()
     missing_values = data.isnull().sum().to_dict()
-    sample_rows = data.head(5).to_dict(orient='records')
+    correlation_info = (
+        data[numeric_cols].corr().to_dict() if numeric_cols else "No numeric columns available."
+    )
+
     prompt = (
-        f"### Dataset Summary:\n{summary}\n"
-        f"### Missing Values:\n{missing_values}\n"
-        f"### Sample Rows:\n{sample_rows}\n"
-        "Generate a detailed README.md with the following sections:\n"
-        "1. Dataset Overview\n"
-        "2. Key Insights\n"
-        "3. Visualizations\n"
-        "4. Suggested Further Analysis\n"
+        "You are an expert data analyst. Generate a detailed README.md summarizing the analysis of this dataset. "
+        "Focus on uncovering deep insights, drawing meaningful conclusions, and interpreting results in an engaging way. "
+        "Tie the findings together into a cohesive narrative with a strong conclusion.\n\n"
+        "### Dataset Overview\n"
+        f"Numeric attributes: {numeric_cols}\n"
+        f"Categorical attributes: {categorical_cols}\n\n"
+        "### Insights & Visualizations\n"
+        f"1. Correlation Heatmap\n"
+        f"2. Distribution of {numeric_cols[0] if numeric_cols else 'N/A'}\n"
+        f"3. Boxplot of {numeric_cols[1] if len(numeric_cols) > 1 else 'N/A'}\n"
+        f"4. Top 10 Categories in {categorical_cols[0] if categorical_cols else 'N/A'}\n\n"
+        "### Big Picture Conclusions\n"
+        "Provide actionable insights and practical applications."
     )
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -166,32 +143,21 @@ def query_llm(data):
         sys.exit(1)
 
 def save_readme(insights):
-    """
-    Save insights to README.md.
-    Args:
-        insights (str): Content to save in README.md.
-    """
     with open("README.md", "w") as f:
         f.write(insights)
-    print("README saved as README.md")
+    print("Saved README.md")
 
 def main():
-    """
-    Main function to orchestrate the analysis, visualization, and LLM querying.
-    """
     if len(sys.argv) != 2:
         print("Usage: uv run autolysis.py <dataset.csv>")
         sys.exit(1)
 
     file_path = sys.argv[1]
     data = load_dataset(file_path)
-    numeric_cols, categorical_cols, text_cols = analyze_data(data)
+    numeric_cols, categorical_cols = analyze_data(data)
 
-    if numeric_cols:
-        generate_visualizations(data, numeric_cols)
-        perform_advanced_analysis(data, numeric_cols)
-
-    insights = query_llm(data)
+    visualizations = generate_visualizations(data, numeric_cols, categorical_cols)
+    insights = query_llm(data, numeric_cols, categorical_cols, visualizations)
     save_readme(insights)
 
 if __name__ == "__main__":
