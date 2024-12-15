@@ -130,6 +130,7 @@ def generate_visualizations(data, numeric_cols, categorical_cols):
     """
     visualizations = []
 
+    # Correlation Heatmap
     if numeric_cols:
         correlation = data[numeric_cols].corr()
         plt.figure(figsize=(10, 8))
@@ -140,6 +141,7 @@ def generate_visualizations(data, numeric_cols, categorical_cols):
         visualizations.append("correlation_heatmap.png")
         print("Saved: correlation_heatmap.png")
 
+        # Histogram for the first numeric column
         plt.figure(figsize=(8, 6))
         sns.histplot(data[numeric_cols[0]], bins=30, kde=True)
         plt.title(f"Distribution of {numeric_cols[0]}")
@@ -147,13 +149,19 @@ def generate_visualizations(data, numeric_cols, categorical_cols):
         plt.close()
         visualizations.append(f"{numeric_cols[0]}_distribution.png")
 
+    # Scatter plot for PCA clustering
+    if 'PCA1' in data.columns and 'PCA2' in data.columns and 'Cluster' in data.columns:
         plt.figure(figsize=(8, 6))
         sns.scatterplot(x='PCA1', y='PCA2', hue='Cluster', data=data)
         plt.title("PCA Clustering Scatterplot")
         plt.savefig("pca_clustering_scatterplot.png")
         plt.close()
         visualizations.append("pca_clustering_scatterplot.png")
+        print("Saved: pca_clustering_scatterplot.png")
+    else:
+        print("Skipping PCA Clustering Scatterplot: Required columns ('PCA1', 'PCA2', 'Cluster') are missing.")
 
+    # Top categories bar chart
     if categorical_cols:
         plt.figure(figsize=(10, 6))
         top_categories = data[categorical_cols[0]].value_counts().head(10)
@@ -162,6 +170,7 @@ def generate_visualizations(data, numeric_cols, categorical_cols):
         plt.savefig(f"{categorical_cols[0]}_top10.png")
         plt.close()
         visualizations.append(f"{categorical_cols[0]}_top10.png")
+        print(f"Saved: {categorical_cols[0]}_top10.png")
 
     return visualizations
 
