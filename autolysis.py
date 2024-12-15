@@ -108,9 +108,14 @@ def perform_clustering(data, numeric_cols):
 
 def apply_pca(data, numeric_cols):
     pca = PCA(n_components=2)
-    pca_result = pca.fit_transform(data[numeric_cols].dropna())
-    data['PCA1'] = pca_result[:, 0]
-    data['PCA2'] = pca_result[:, 1]
+    # Dropping rows with missing values
+    data_numeric = data[numeric_cols].dropna()
+    pca_result = pca.fit_transform(data_numeric)
+    
+    # Create a DataFrame with PCA results and align it with the original data
+    pca_df = pd.DataFrame(pca_result, columns=['PCA1', 'PCA2'], index=data_numeric.index)
+    data['PCA1'] = pca_df['PCA1']
+    data['PCA2'] = pca_df['PCA2']
     print("PCA applied. PCA results added to the dataset.")
 
 def generate_visualizations(data, numeric_cols, categorical_cols):
