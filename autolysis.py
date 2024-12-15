@@ -7,7 +7,6 @@
 #   "chardet",
 #   "scikit-learn",
 #   "requests",
-#   "base64"
 # ]
 # ///
 
