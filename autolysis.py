@@ -16,6 +16,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
 import chardet
 import requests
 
@@ -96,6 +97,22 @@ def detect_outliers(data, numeric_cols):
     print(f"Outlier summary: {outlier_summary}")
     return outlier_summary
 
+def perform_clustering(data, numeric_cols):
+    try:
+        kmeans = KMeans(n_clusters=3, random_state=42)
+        clusters = kmeans.fit_predict(data[numeric_cols].dropna())
+        data['Cluster'] = clusters
+        print("Clustering completed. Cluster labels added to the dataset.")
+    except Exception as e:
+        print(f"Clustering failed: {e}")
+
+def apply_pca(data, numeric_cols):
+    pca = PCA(n_components=2)
+    pca_result = pca.fit_transform(data[numeric_cols].dropna())
+    data['PCA1'] = pca_result[:, 0]
+    data['PCA2'] = pca_result[:, 1]
+    print("PCA applied. PCA results added to the dataset.")
+
 def generate_visualizations(data, numeric_cols, categorical_cols):
     """
     Generates visualizations based on the dataset.
@@ -108,7 +125,6 @@ def generate_visualizations(data, numeric_cols, categorical_cols):
     """
     visualizations = []
 
-    # Correlation Heatmap
     if numeric_cols:
         correlation = data[numeric_cols].corr()
         plt.figure(figsize=(10, 8))
@@ -119,91 +135,34 @@ def generate_visualizations(data, numeric_cols, categorical_cols):
         visualizations.append("correlation_heatmap.png")
         print("Saved: correlation_heatmap.png")
 
-    # Histogram of First Numeric Column
-    if numeric_cols:
         plt.figure(figsize=(8, 6))
         sns.histplot(data[numeric_cols[0]], bins=30, kde=True)
         plt.title(f"Distribution of {numeric_cols[0]}")
-        plt.xlabel(numeric_cols[0])
-        plt.ylabel("Frequency")
         plt.savefig(f"{numeric_cols[0]}_distribution.png")
         plt.close()
         visualizations.append(f"{numeric_cols[0]}_distribution.png")
-        print(f"Saved: {numeric_cols[0]}_distribution.png")
 
-    # Boxplot of Second Numeric Column
-    if len(numeric_cols) > 1:
         plt.figure(figsize=(8, 6))
-        sns.boxplot(y=data[numeric_cols[1]])
-        plt.title(f"Boxplot of {numeric_cols[1]}")
-        plt.ylabel(numeric_cols[1])
-        plt.savefig(f"{numeric_cols[1]}_boxplot.png")
+        sns.scatterplot(x='PCA1', y='PCA2', hue='Cluster', data=data)
+        plt.title("PCA Clustering Scatterplot")
+        plt.savefig("pca_clustering_scatterplot.png")
         plt.close()
-        visualizations.append(f"{numeric_cols[1]}_boxplot.png")
-        print(f"Saved: {numeric_cols[1]}_boxplot.png")
+        visualizations.append("pca_clustering_scatterplot.png")
 
-    # Top Categories Bar Chart
     if categorical_cols:
         plt.figure(figsize=(10, 6))
         top_categories = data[categorical_cols[0]].value_counts().head(10)
         sns.barplot(x=top_categories.values, y=top_categories.index, palette="viridis")
         plt.title(f"Top 10 Categories in {categorical_cols[0]}")
-        plt.xlabel("Count")
-        plt.ylabel(categorical_cols[0])
-        for i, v in enumerate(top_categories.values):
-            plt.text(v + 1, i, str(v), color='black', va='center')
         plt.savefig(f"{categorical_cols[0]}_top10.png")
         plt.close()
         visualizations.append(f"{categorical_cols[0]}_top10.png")
-        print(f"Saved: {categorical_cols[0]}_top10.png")
 
     return visualizations
 
-def query_llm(data, numeric_cols, categorical_cols, visualizations):
-    """
-    Queries the LLM to generate insights and a README.md file.
-    Args:
-        data (pd.DataFrame): The dataset to analyze.
-        numeric_cols (list): List of numeric column names.
-        categorical_cols (list): List of categorical column names.
-        visualizations (list): List of visualization file paths.
-    Returns:
-        str: Content for the README.md file.
-    """
+def query_llm(prompt):
     api_url = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
     api_key = os.getenv("AIPROXY_TOKEN")
-    if not api_key:
-        print("Error: AIPROXY_TOKEN environment variable not set.")
-        sys.exit(1)
-
-    summary_stats = data.describe(include="all").to_dict()
-    missing_values = data.isnull().sum().to_dict()
-    correlation_info = (
-        data[numeric_cols].corr().to_dict() if numeric_cols else "No numeric columns available."
-    )
-
-    prompt = (
-        "You are an expert data analyst. Generate a detailed README.md summarizing the analysis of this dataset. "
-        "Focus on uncovering deep insights, drawing meaningful conclusions, and interpreting results in an engaging way. "
-        "Tie the findings together into a cohesive narrative with a strong conclusion.\n\n"
-        "### Dataset Overview\n"
-        f"Numeric attributes: {numeric_cols}\n"
-        f"Categorical attributes: {categorical_cols}\n\n"
-        "### Key Insights\n"
-        f"1. Correlation insights: {correlation_info}\n"
-        f"2. Outlier summary: {detect_outliers(data, numeric_cols)}\n"
-        "3. Missing values analysis: Discuss potential impacts and resolution strategies.\n\n"
-        "### Visualizations\n"
-        f"1. Correlation Heatmap\n"
-        f"2. Distribution of {numeric_cols[0] if numeric_cols else 'N/A'}\n"
-        f"3. Boxplot of {numeric_cols[1] if len(numeric_cols) > 1 else 'N/A'}\n"
-        f"4. Top 10 Categories in {categorical_cols[0] if categorical_cols else 'N/A'}\n\n"
-        "### Practical Applications\n"
-        "Explain how the findings can inform decisions in relevant domains.\n\n"
-        "### Big Picture Conclusions\n"
-        "Summarize the key takeaways and actionable insights from the analysis."
-    )
-
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": prompt}]}
 
@@ -214,6 +173,31 @@ def query_llm(data, numeric_cols, categorical_cols, visualizations):
     except requests.exceptions.RequestException as e:
         print(f"Error querying the LLM: {e}")
         sys.exit(1)
+
+def generate_dynamic_prompt(data, numeric_cols, categorical_cols, outliers, visualizations):
+    prompt = (
+        "You are an expert data analyst. Generate a detailed README.md summarizing the analysis of this dataset. "
+        "Focus on uncovering deep insights, drawing meaningful conclusions, and interpreting results in an engaging way. "
+        "Tie the findings together into a cohesive narrative with a strong conclusion. "
+        "Include the visualizations directly into the narrative for clarity.\n\n"
+        "### Dataset Overview\n"
+        f"Numeric Columns: {numeric_cols}\n"
+        f"Categorical Columns: {categorical_cols}\n\n"
+        "### Key Insights\n"
+        f"1. Correlation insights: {data[numeric_cols].corr().to_dict() if numeric_cols else 'No numeric columns available.'}\n"
+        f"2. Outlier summary: {outliers}\n"
+        "3. Missing values analysis: Discuss potential impacts and resolution strategies.\n\n"
+        "### Visualizations\n"
+        f"1. ![Correlation Heatmap](correlation_heatmap.png)\n"
+        f"2. ![Distribution of {numeric_cols[0] if numeric_cols else 'N/A'}](distribution_{numeric_cols[0] if numeric_cols else 'N/A'}.png)\n"
+        f"3. ![PCA Clustering Scatterplot](pca_clustering_scatterplot.png)\n"
+        f"4. ![Top 10 Categories in {categorical_cols[0] if categorical_cols else 'N/A'}](top10_{categorical_cols[0] if categorical_cols else 'N/A'}.png)\n\n"
+        "### Practical Applications\n"
+        "Explain how the findings can inform decisions in relevant domains.\n\n"
+        "### Big Picture Conclusions\n"
+        "Summarize the key takeaways and actionable insights from the analysis."
+    )
+    return prompt
 
 def save_readme(insights):
     """
@@ -230,15 +214,20 @@ def main():
     Main function to orchestrate the analysis, visualization, and README.md generation.
     """
     if len(sys.argv) != 2:
-        print("Usage: uv run autolysis.py <dataset.csv>")
+        print("Usage: python autolysis.py <dataset.csv>")
         sys.exit(1)
 
     file_path = sys.argv[1]
     data = load_dataset(file_path)
     numeric_cols, categorical_cols = analyze_data(data)
 
+    outliers = detect_outliers(data, numeric_cols)
+    perform_clustering(data, numeric_cols)
+    apply_pca(data, numeric_cols)
     visualizations = generate_visualizations(data, numeric_cols, categorical_cols)
-    insights = query_llm(data, numeric_cols, categorical_cols, visualizations)
+
+    prompt = generate_dynamic_prompt(data, numeric_cols, categorical_cols, outliers, visualizations)
+    insights = query_llm(prompt)
     save_readme(insights)
 
 if __name__ == "__main__":
