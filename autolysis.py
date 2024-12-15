@@ -20,11 +20,25 @@ import chardet
 import requests
 
 def detect_encoding(file_path):
+    """
+    Detects the encoding of the file to handle various character sets.
+    Args:
+        file_path (str): Path to the dataset file.
+    Returns:
+        str: Detected encoding.
+    """
     with open(file_path, 'rb') as f:
         result = chardet.detect(f.read(10000))
     return result['encoding']
 
 def load_dataset(file_path):
+    """
+    Loads the dataset from the given file path, handling encoding issues.
+    Args:
+        file_path (str): Path to the dataset file.
+    Returns:
+        pd.DataFrame: Loaded dataset.
+    """
     try:
         encoding = detect_encoding(file_path)
         print(f"Detected encoding: {encoding}")
@@ -40,18 +54,58 @@ def load_dataset(file_path):
         except Exception as e:
             print(f"Error loading dataset with fallback encoding: {e}")
             sys.exit(1)
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}. Please check the file path.")
+        sys.exit(1)
     except Exception as e:
         print(f"Error loading dataset: {e}")
         sys.exit(1)
 
 def analyze_data(data):
+    """
+    Analyzes the dataset to identify numeric and categorical columns.
+    Args:
+        data (pd.DataFrame): The dataset to analyze.
+    Returns:
+        tuple: Lists of numeric and categorical columns.
+    """
     numeric_cols = data.select_dtypes(include=['float64', 'int64']).columns.tolist()
     categorical_cols = data.select_dtypes(include=['object']).columns.tolist()
     print(f"Numeric columns: {numeric_cols}")
     print(f"Categorical columns: {categorical_cols}")
     return numeric_cols, categorical_cols
 
+def detect_outliers(data, numeric_cols):
+    """
+    Detects outliers in numeric columns using the IQR method.
+    Args:
+        data (pd.DataFrame): The dataset to analyze.
+        numeric_cols (list): List of numeric column names.
+    Returns:
+        dict: A summary of outliers per numeric column.
+    """
+    outlier_summary = {}
+    for col in numeric_cols:
+        Q1 = data[col].quantile(0.25)
+        Q3 = data[col].quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        outliers = data[(data[col] < lower_bound) | (data[col] > upper_bound)]
+        outlier_summary[col] = len(outliers)
+    print(f"Outlier summary: {outlier_summary}")
+    return outlier_summary
+
 def generate_visualizations(data, numeric_cols, categorical_cols):
+    """
+    Generates visualizations based on the dataset.
+    Args:
+        data (pd.DataFrame): The dataset to visualize.
+        numeric_cols (list): List of numeric column names.
+        categorical_cols (list): List of categorical column names.
+    Returns:
+        list: File paths of the generated visualizations.
+    """
     visualizations = []
 
     # Correlation Heatmap
@@ -91,10 +145,13 @@ def generate_visualizations(data, numeric_cols, categorical_cols):
     # Top Categories Bar Chart
     if categorical_cols:
         plt.figure(figsize=(10, 6))
-        data[categorical_cols[0]].value_counts().head(10).plot(kind="bar")
+        top_categories = data[categorical_cols[0]].value_counts().head(10)
+        sns.barplot(x=top_categories.values, y=top_categories.index, palette="viridis")
         plt.title(f"Top 10 Categories in {categorical_cols[0]}")
-        plt.xlabel(categorical_cols[0])
-        plt.ylabel("Frequency")
+        plt.xlabel("Count")
+        plt.ylabel(categorical_cols[0])
+        for i, v in enumerate(top_categories.values):
+            plt.text(v + 1, i, str(v), color='black', va='center')
         plt.savefig(f"{categorical_cols[0]}_top10.png")
         plt.close()
         visualizations.append(f"{categorical_cols[0]}_top10.png")
@@ -103,6 +160,16 @@ def generate_visualizations(data, numeric_cols, categorical_cols):
     return visualizations
 
 def query_llm(data, numeric_cols, categorical_cols, visualizations):
+    """
+    Queries the LLM to generate insights and a README.md file.
+    Args:
+        data (pd.DataFrame): The dataset to analyze.
+        numeric_cols (list): List of numeric column names.
+        categorical_cols (list): List of categorical column names.
+        visualizations (list): List of visualization file paths.
+    Returns:
+        str: Content for the README.md file.
+    """
     api_url = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
     api_key = os.getenv("AIPROXY_TOKEN")
     if not api_key:
@@ -122,13 +189,19 @@ def query_llm(data, numeric_cols, categorical_cols, visualizations):
         "### Dataset Overview\n"
         f"Numeric attributes: {numeric_cols}\n"
         f"Categorical attributes: {categorical_cols}\n\n"
-        "### Insights & Visualizations\n"
+        "### Key Insights\n"
+        f"1. Correlation insights: {correlation_info}\n"
+        f"2. Outlier summary: {detect_outliers(data, numeric_cols)}\n"
+        "3. Missing values analysis: Discuss potential impacts and resolution strategies.\n\n"
+        "### Visualizations\n"
         f"1. Correlation Heatmap\n"
         f"2. Distribution of {numeric_cols[0] if numeric_cols else 'N/A'}\n"
         f"3. Boxplot of {numeric_cols[1] if len(numeric_cols) > 1 else 'N/A'}\n"
         f"4. Top 10 Categories in {categorical_cols[0] if categorical_cols else 'N/A'}\n\n"
+        "### Practical Applications\n"
+        "Explain how the findings can inform decisions in relevant domains.\n\n"
         "### Big Picture Conclusions\n"
-        "Provide actionable insights and practical applications."
+        "Summarize the key takeaways and actionable insights from the analysis."
     )
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -143,11 +216,19 @@ def query_llm(data, numeric_cols, categorical_cols, visualizations):
         sys.exit(1)
 
 def save_readme(insights):
+    """
+    Saves the generated README.md content to a file.
+    Args:
+        insights (str): The content to save.
+    """
     with open("README.md", "w") as f:
         f.write(insights)
     print("Saved README.md")
 
 def main():
+    """
+    Main function to orchestrate the analysis, visualization, and README.md generation.
+    """
     if len(sys.argv) != 2:
         print("Usage: uv run autolysis.py <dataset.csv>")
         sys.exit(1)
