@@ -6,7 +6,8 @@
 #   "seaborn",
 #   "chardet",
 #   "scikit-learn",
-#   "requests"
+#   "requests",
+#   "base64"
 # ]
 # ///
 
@@ -17,29 +18,17 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+from sklearn.ensemble import RandomForestRegressor
 import chardet
 import requests
+import base64
 
 def detect_encoding(file_path):
-    """
-    Detects the encoding of the file to handle various character sets.
-    Args:
-        file_path (str): Path to the dataset file.
-    Returns:
-        str: Detected encoding.
-    """
     with open(file_path, 'rb') as f:
         result = chardet.detect(f.read(10000))
     return result['encoding']
 
 def load_dataset(file_path):
-    """
-    Loads the dataset from the given file path, handling encoding issues.
-    Args:
-        file_path (str): Path to the dataset file.
-    Returns:
-        pd.DataFrame: Loaded dataset.
-    """
     try:
         encoding = detect_encoding(file_path)
         print(f"Detected encoding: {encoding}")
@@ -63,13 +52,6 @@ def load_dataset(file_path):
         sys.exit(1)
 
 def analyze_data(data):
-    """
-    Analyzes the dataset to identify numeric and categorical columns.
-    Args:
-        data (pd.DataFrame): The dataset to analyze.
-    Returns:
-        tuple: Lists of numeric and categorical columns.
-    """
     numeric_cols = data.select_dtypes(include=['float64', 'int64']).columns.tolist()
     categorical_cols = data.select_dtypes(include=['object']).columns.tolist()
     print(f"Numeric columns: {numeric_cols}")
@@ -77,14 +59,6 @@ def analyze_data(data):
     return numeric_cols, categorical_cols
 
 def detect_outliers(data, numeric_cols):
-    """
-    Detects outliers in numeric columns using the IQR method.
-    Args:
-        data (pd.DataFrame): The dataset to analyze.
-        numeric_cols (list): List of numeric column names.
-    Returns:
-        dict: A summary of outliers per numeric column.
-    """
     outlier_summary = {}
     if not numeric_cols:
         print("No numeric columns available for outlier detection.")
@@ -121,11 +95,8 @@ def apply_pca(data, numeric_cols):
 
     try:
         pca = PCA(n_components=2)
-        # Dropping rows with missing values
         data_numeric = data[numeric_cols].dropna()
         pca_result = pca.fit_transform(data_numeric)
-        
-        # Create a DataFrame with PCA results and align it with the original data
         pca_df = pd.DataFrame(pca_result, columns=['PCA1', 'PCA2'], index=data_numeric.index)
         data['PCA1'] = pca_df['PCA1']
         data['PCA2'] = pca_df['PCA2']
@@ -133,16 +104,19 @@ def apply_pca(data, numeric_cols):
     except Exception as e:
         print(f"PCA failed: {e}")
 
+def feature_importance(data, numeric_cols, target_col):
+    if not numeric_cols or target_col not in numeric_cols:
+        print("No suitable numeric columns or target column for feature importance analysis.")
+        return
+    try:
+        model = RandomForestRegressor()
+        model.fit(data[numeric_cols].dropna(), data[target_col].dropna())
+        importance = model.feature_importances_
+        print("Feature Importance:", dict(zip(numeric_cols, importance)))
+    except Exception as e:
+        print(f"Feature importance calculation failed: {e}")
+
 def generate_visualizations(data, numeric_cols, categorical_cols):
-    """
-    Generates visualizations based on the dataset.
-    Args:
-        data (pd.DataFrame): The dataset to visualize.
-        numeric_cols (list): List of numeric column names.
-        categorical_cols (list): List of categorical column names.
-    Returns:
-        list: File paths of the generated visualizations.
-    """
     visualizations = []
 
     # Correlation Heatmap
@@ -189,6 +163,15 @@ def generate_visualizations(data, numeric_cols, categorical_cols):
 
     return visualizations
 
+def iterative_visualization_refinement(data, visualizations):
+    insights = []
+    for viz in visualizations:
+        with open(viz, "rb") as img_file:
+            encoded_image = base64.b64encode(img_file.read()).decode()
+            prompt = f"Analyze this visualization and suggest insights or improvements.\n![{viz}]({encoded_image})"
+            insights.append(query_llm(prompt))
+    return insights
+
 def query_llm(prompt):
     api_url = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
     api_key = os.getenv("AIPROXY_TOKEN")
@@ -204,6 +187,7 @@ def query_llm(prompt):
         sys.exit(1)
 
 def generate_dynamic_prompt(data, numeric_cols, categorical_cols, outliers, visualizations):
+    summary_stats = data.describe(include="all").to_dict()
     prompt = (
         "You are an expert data analyst. Generate a detailed README.md summarizing the analysis of this dataset. "
         "Focus on uncovering deep insights, drawing meaningful conclusions, and interpreting results in an engaging way. "
@@ -211,7 +195,8 @@ def generate_dynamic_prompt(data, numeric_cols, categorical_cols, outliers, visu
         "Include the visualizations directly into the narrative for clarity.\n\n"
         "### Dataset Overview\n"
         f"Numeric Columns: {numeric_cols}\n"
-        f"Categorical Columns: {categorical_cols}\n\n"
+        f"Categorical Columns: {categorical_cols}\n"
+        f"Summary statistics (top-level insights): {summary_stats}\n\n"
         "### Key Insights\n"
         f"1. Correlation insights: {data[numeric_cols].corr().to_dict() if numeric_cols else 'No numeric columns available.'}\n"
         f"2. Outlier summary: {outliers}\n"
@@ -231,19 +216,11 @@ def generate_dynamic_prompt(data, numeric_cols, categorical_cols, outliers, visu
     return prompt
 
 def save_readme(insights):
-    """
-    Saves the generated README.md content to a file.
-    Args:
-        insights (str): The content to save.
-    """
     with open("README.md", "w") as f:
         f.write(insights)
     print("Saved README.md")
 
 def main():
-    """
-    Main function to orchestrate the analysis, visualization, and README.md generation.
-    """
     if len(sys.argv) != 2:
         print("Usage: python autolysis.py <dataset.csv>")
         sys.exit(1)
@@ -255,7 +232,11 @@ def main():
     outliers = detect_outliers(data, numeric_cols)
     perform_clustering(data, numeric_cols)
     apply_pca(data, numeric_cols)
+    feature_importance(data, numeric_cols, numeric_cols[0] if numeric_cols else None)
     visualizations = generate_visualizations(data, numeric_cols, categorical_cols)
+
+    refined_visual_insights = iterative_visualization_refinement(data, visualizations)
+    print("Refined Visualization Insights:", refined_visual_insights)
 
     prompt = generate_dynamic_prompt(data, numeric_cols, categorical_cols, outliers, visualizations)
     insights = query_llm(prompt)
